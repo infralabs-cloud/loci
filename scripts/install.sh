@@ -63,6 +63,10 @@ if [ "${KEEP_ALL_WHEELS}" != "False" ]; then
     NO_INDEX=--no-index
 fi
 
+apt update
+apt install -y gcc build-essential python3-dev libpcre3-dev
+
+
 $(dirname $0)/fetch_wheels.sh
 if [[ "${PROJECT}" == "infra" ]]; then
     $(dirname $0)/setup_pip.sh
