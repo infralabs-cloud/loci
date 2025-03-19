@@ -64,7 +64,11 @@ if [ "${KEEP_ALL_WHEELS}" != "False" ]; then
 fi
 
 apt update
-apt install -y gcc build-essential python3-dev libpcre3-dev
+apt install -y gcc build-essential python3-dev libpcre3-dev gh\
+    pkg-config \
+    libvirt-dev && \
+    apt clean -y && \
+    rm -rf /var/lib/apt/lists/*
 
 
 $(dirname $0)/fetch_wheels.sh

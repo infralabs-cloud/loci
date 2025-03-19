@@ -9,6 +9,7 @@ done
 if [[ ! -z ${PACKAGES} ]]; then
     case ${distro} in
         ubuntu)
+            apt -y update
             apt-get install -y --no-install-recommends ${PACKAGES[@]} ${DIST_PACKAGES}
             ;;
         centos)
