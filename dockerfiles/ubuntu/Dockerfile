@@ -10,6 +10,21 @@ Acquire::AllowInsecureRepositories \"${ALLOW_UNAUTHENTICATED}\";\n\
 Acquire::AllowDowngradeToInsecureRepositories \"${ALLOW_UNAUTHENTICATED}\";" \
     >> /etc/apt/apt.conf.d/allow-unathenticated
 
+# Add Ubuntu keyring setup
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        gnupg \
+        wget && \
+    mkdir -p /etc/apt/keyrings && \
+    wget -O /etc/apt/keyrings/ubuntu-archive-keyring.gpg https://archive.ubuntu.com/ubuntu/project/ubuntu-archive-keyring.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/ubuntu-archive-keyring.gpg] http://archive.ubuntu.com/ubuntu jammy main restricted universe multiverse" > /etc/apt/sources.list && \
+    echo "deb [signed-by=/etc/apt/keyrings/ubuntu-archive-keyring.gpg] http://archive.ubuntu.com/ubuntu jammy-updates main restricted universe multiverse" >> /etc/apt/sources.list && \
+    echo "deb [signed-by=/etc/apt/keyrings/ubuntu-archive-keyring.gpg] http://archive.ubuntu.com/ubuntu jammy-backports main restricted universe multiverse" >> /etc/apt/sources.list && \
+    echo "deb [signed-by=/etc/apt/keyrings/ubuntu-archive-keyring.gpg] http://security.ubuntu.com/ubuntu jammy-security main restricted universe multiverse" >> /etc/apt/sources.list && \
+    rm -rf /var/lib/apt/lists/*
+
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y --no-install-recommends \

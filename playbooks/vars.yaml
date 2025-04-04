@@ -220,7 +220,7 @@ neutron_image:
     - "PROJECT_REF={{ openstack_release }}"
     - "PROFILES='fluent linuxbridge openvswitch apache vpn baremetal'"
     - "PIP_PACKAGES='tap-as-a-service'"
-    - "DIST_PACKAGES='jq ethtool lshw openvswitch-common'"
+    - "DIST_PACKAGES='jq ethtool lshw openvswitch-switch'"
     - "WHEELS='{{ local_registry }}/{{ image_registries[0].host }}/{{ image_registries[0].org }}/requirements:{{ image_tag }}'"
     - "KEEP_ALL_WHEELS=yes"
 
