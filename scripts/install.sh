@@ -54,6 +54,22 @@ case ${distro} in
         ;;
 esac
 
+# Add missing public keys for Ubuntu repositories
+if [[ ${distro} == "ubuntu" ]]; then
+    mkdir -p /etc/apt/keyrings
+    # Add archive.ubuntu.com key
+    gpg --no-default-keyring --keyring /etc/apt/keyrings/ubuntu-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 871920D1991BC93C
+    gpg --dearmor < /etc/apt/keyrings/ubuntu-archive-keyring.gpg > /etc/apt/keyrings/ubuntu-archive-keyring-dearmor.gpg
+    # Add ports.ubuntu.com key
+    gpg --no-default-keyring --keyring /etc/apt/keyrings/ubuntu-ports-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 871920D1991BC93C
+    gpg --dearmor < /etc/apt/keyrings/ubuntu-ports-keyring.gpg > /etc/apt/keyrings/ubuntu-ports-keyring-dearmor.gpg
+    # Add Ceph key
+    wget -q -O /tmp/ceph-key.asc https://download.ceph.com/keys/release.asc
+    gpg --import /tmp/ceph-key.asc
+    gpg --dearmor < /tmp/ceph-key.asc > /etc/apt/keyrings/ceph-keyring.gpg
+    rm -f /tmp/ceph-key.asc
+fi
+
 if [[ "${PROJECT}" == "requirements" ]]; then
     $(dirname $0)/requirements.sh
     exit 0
@@ -64,12 +80,11 @@ if [ "${KEEP_ALL_WHEELS}" != "False" ]; then
 fi
 
 apt update
-apt install -y gcc build-essential python3-dev libpcre3-dev gh\
+apt install -y gcc build-essential python3-dev libpcre3-dev gh \
     pkg-config \
     libvirt-dev && \
     apt clean -y && \
     rm -rf /var/lib/apt/lists/*
-
 
 $(dirname $0)/fetch_wheels.sh
 if [[ "${PROJECT}" == "infra" ]]; then
