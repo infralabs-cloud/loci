@@ -17,9 +17,11 @@ case ${distro} in
     ubuntu)
         export LC_CTYPE=C.UTF-8
         apt-get update
+
         if [[ ! -z "$(apt-cache search ^python3-distutils$)" ]]; then
             dpkg_python_packages+=("python3-distutils")
         fi
+
         apt-get upgrade -y
         apt-get install -y --no-install-recommends \
             git \
@@ -30,9 +32,23 @@ case ${distro} in
             sudo \
             wget \
             bind9-host \
-            ${dpkg_python_packages[@]}
-        apt-get install -y --no-install-recommends \
-            libpython3.$(python3 -c 'import sys; print(sys.version_info.minor);')
+            gcc \
+            build-essential \
+            python3-dev \
+            libpcre3-dev \
+            libssl-dev \
+            uwsgi uwsgi-plugin-python3 \
+            libldap2-dev \
+            libsasl2-dev \
+            libssl-dev \
+            pkg-config \
+            libvirt-dev \
+            libxml2-dev \
+            ${dpkg_python_packages[@]} \
+            libpython3.$(python3 -c 'import sys; print(sys.version_info.minor);')-dev
+
+        apt-get clean
+        rm -rf /var/lib/apt/lists/*
         ;;
     centos)
         export LC_CTYPE=en_US.UTF-8
@@ -62,14 +78,6 @@ fi
 if [ "${KEEP_ALL_WHEELS}" != "False" ]; then
     NO_INDEX=--no-index
 fi
-
-apt update
-apt install -y gcc build-essential python3-dev libpcre3-dev gh\
-    pkg-config \
-    libvirt-dev && \
-    apt clean -y && \
-    rm -rf /var/lib/apt/lists/*
-
 
 $(dirname $0)/fetch_wheels.sh
 if [[ "${PROJECT}" == "infra" ]]; then

@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
 
 # Add Ceph Reef repo
 RUN curl -fsSL https://download.ceph.com/keys/release.asc | gpg --dearmor -o /usr/share/keyrings/ceph.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/ceph.gpg] https://download.ceph.com/debian-reef $(lsb_release -sc) main" > /etc/apt/sources.list.d/ceph.list
+    echo "deb [signed-by=/usr/share/keyrings/ceph.gpg] https://download.ceph.com/debian-reef jammy main" > /etc/apt/sources.list.d/ceph.list
 
-RUN apt-get update
+RUN apt-get update && apt-get install -y \
+    ceph-common 
