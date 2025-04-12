@@ -37,7 +37,6 @@ case ${distro} in
             python3-dev \
             libpcre3-dev \
             libssl-dev \
-            uwsgi uwsgi-plugin-python3 \
             libldap2-dev \
             libsasl2-dev \
             libssl-dev \
