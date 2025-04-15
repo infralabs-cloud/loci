@@ -67,3 +67,8 @@ rm -rf ${DASHBOARD_ROOT}/local/.secret_key_store
 for lock in ${DASHBOARD_ROOT}/local/*.lock; do
     rm -f ${lock}
 done
+
+if [[ ${distro} -eq "ubuntu" ]]; then
+        apt-get install -y --no-install-recommends wget apache2  libapache2-mod-wsgi-py3
+    
+fi
