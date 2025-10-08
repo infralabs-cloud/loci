@@ -211,17 +211,18 @@ neutron_image:
   context: "."
   dockerfile: "Dockerfile"
   container_filename: "Dockerfile"
+  target: "project"
   registry: "{{ image_registry.host }}"
   repository: "{{ image_registry.host }}/{{ image_registry.org }}/neutron"
   tags: *tags
   build_args:
-    - "FROM='loci-base:{{ image_tag }}'"
+    - "FROM='{{ image_registry.host }}/{{ image_registry.org }}/base:{{ image_tag }}'"
     - "PROJECT='neutron'"
     - "PROJECT_REF={{ openstack_release }}"
-    - "PROFILES='fluent linuxbridge openvswitch apache vpn baremetal'"
+    - "PROFILES='fluent linuxbridge openvswitch apache vpn baremetal ovn'"
     - "PIP_PACKAGES='tap-as-a-service'"
-    - "DIST_PACKAGES='jq ethtool lshw openvswitch-switch'"
-    - "WHEELS='{{ local_registry }}/{{ image_registries[0].host }}/{{ image_registries[0].org }}/requirements:{{ image_tag }}'"
+    - "DIST_PACKAGES='jq ethtool lshw openvswitch-switch ovn-host python3-openvswitch'"
+    - "WHEELS='{{ image_registry.host }}/{{ image_registry.org }}/requirements:{{ image_tag }}'"
     - "KEEP_ALL_WHEELS=yes"
 
 nova_image:
