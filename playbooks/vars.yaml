@@ -252,7 +252,7 @@ octavia_image:
     - "FROM='loci-base:{{ image_tag }}'"
     - "PROJECT='octavia'"
     - "PROJECT_REF={{ openstack_release }}"
-    - "PIP_PACKAGES='octavia==17.0.0 redis ovn-octavia-provider'"
+    - "PIP_PACKAGES='octavia redis ovn-octavia-provider'"
     - "WHEELS='{{ local_registry }}/{{ image_registries[0].host }}/{{ image_registries[0].org }}/requirements:{{ image_tag }}'"
     - "KEEP_ALL_WHEELS=yes"
 
