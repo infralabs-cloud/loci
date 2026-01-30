@@ -11,6 +11,8 @@ ENV LANG=C.UTF-8
 
 # WHEELS_PATH must not be somewhere in /tmp because /tmp/* are deleted in the end of build
 ARG WHEELS_PATH="/wheels"
+ARG OPENSTACK_RELEASE
+ARG CEPH_RELEASE
 ARG PROJECT
 ARG PROJECT_REPO=https://opendev.org/openstack/${PROJECT}
 ARG PROJECT_REF=master

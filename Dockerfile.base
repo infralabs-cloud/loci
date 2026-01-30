@@ -1,6 +1,8 @@
 ARG FROM=ubuntu:noble
 FROM ${FROM}
 
+ARG OPENSTACK_RELEASE
+ARG CEPH_RELEASE
 ARG CEPH_REPO
 ARG CEPH_KEY="https://download.ceph.com/keys/release.asc"
 ARG ALLOW_UNAUTHENTICATED=false

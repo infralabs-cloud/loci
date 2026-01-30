@@ -23,9 +23,31 @@ apt-get install -y --no-install-recommends \
 
 configure_apt_sources "${APT_MIRROR}"
 
-wget -q -O- "${CEPH_KEY}" | apt-key add -
-if [ -n "${CEPH_REPO}" ]; then
+# Add OpenStack UCA repo if OPENSTACK_RELEASE is provided
+if [ -n "$OPENSTACK_RELEASE" ]; then
+    echo "Adding OpenStack UCA repository for $OPENSTACK_RELEASE"
+    apt-get update
+    apt-get install -y --no-install-recommends software-properties-common
+    add-apt-repository -y "cloud-archive:$OPENSTACK_RELEASE"
+fi
+
+# Add Ceph repo logic
+CODENAME=$(lsb_release -sc)
+if [[ "$CODENAME" == "noble" ]] && [[ "$CEPH_RELEASE" == "squid" ]]; then
+    echo "Skipping Ceph repository addition for Squid on Noble (natively available)."
+elif [ -n "${CEPH_REPO}" ]; then
+    echo "Adding explicit Ceph repository: ${CEPH_REPO}"
+    wget -q -O- "${CEPH_KEY}" | apt-key add -
     echo "${CEPH_REPO}" | tee /etc/apt/sources.list.d/ceph.list
+elif [ -n "${CEPH_RELEASE}" ]; then
+    echo "Adding Ceph repository for release: ${CEPH_RELEASE}"
+    wget -q -O- "${CEPH_KEY}" | apt-key add -
+    # Fallback for reef on noble
+    REPO_CODENAME=$CODENAME
+    if [[ "$CODENAME" == "noble" ]] && [[ "$CEPH_RELEASE" == "reef" ]]; then
+        REPO_CODENAME="jammy"
+    fi
+    echo "deb https://download.ceph.com/debian-${CEPH_RELEASE} $REPO_CODENAME main" | tee /etc/apt/sources.list.d/ceph.list
 fi
 
 apt-get update
