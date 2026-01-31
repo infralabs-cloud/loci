@@ -70,7 +70,23 @@ COPY scripts /opt/loci/scripts
 ADD bindep.txt pydep.txt $EXTRA_BINDEP $EXTRA_PYDEP /opt/loci/
 
 FROM common AS requirements
-RUN /opt/loci/scripts/requirements.sh
+RUN PROJECT="${PROJECT}" \
+    PROJECT_REPO="${PROJECT_REPO}" \
+    PROJECT_REF="${PROJECT_REF}" \
+    OPENSTACK_RELEASE="${OPENSTACK_RELEASE}" \
+    CEPH_RELEASE="${CEPH_RELEASE}" \
+    APT_MIRROR="${APT_MIRROR}" \
+    SOURCES_DIR="${SOURCES_DIR}" \
+    /opt/loci/scripts/requirements.sh
 
 FROM common AS project
-RUN --mount=type=bind,from=wheels,target=${WHEELS_PATH} /opt/loci/scripts/project.sh
+RUN --mount=type=bind,from=wheels,target=${WHEELS_PATH} \
+    PROJECT="${PROJECT}" \
+    PROJECT_REPO="${PROJECT_REPO}" \
+    PROJECT_REF="${PROJECT_REF}" \
+    OPENSTACK_RELEASE="${OPENSTACK_RELEASE}" \
+    CEPH_RELEASE="${CEPH_RELEASE}" \
+    APT_MIRROR="${APT_MIRROR}" \
+    SOURCES_DIR="${SOURCES_DIR}" \
+    WHEELS_PATH="${WHEELS_PATH}" \
+    /opt/loci/scripts/project.sh

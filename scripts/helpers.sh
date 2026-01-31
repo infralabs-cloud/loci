@@ -66,12 +66,17 @@ configure_apt_sources() {
     # Configure apt sources for Ubuntu based on the release version.
     # Args:
     #   $1: apt mirror URL (defaults to APT_MIRROR env or Ubuntu archive)
-    local apt_mirror="${1}"
+    local apt_mirror="${1:-${APT_MIRROR:-https://archive.ubuntu.com/ubuntu/}}"
 
     # Handle architecture-specific mirrors
     local arch=$(uname -m)
-    if [[ ( "$arch" == "aarch64" || "$arch" == "arm64" ) && ( "$apt_mirror" == "https://archive.ubuntu.com/ubuntu/" || "$apt_mirror" == "http://archive.ubuntu.com/ubuntu/" ) ]]; then
-        apt_mirror="http://ports.ubuntu.com/ubuntu-ports"
+    echo "DEBUG: Architecture detected: $arch"
+    echo "DEBUG: Current apt_mirror before override: $apt_mirror"
+    if [[ "$arch" =~ ^(aarch64|arm64)$ ]]; then
+        if [[ "$apt_mirror" =~ archive\.ubuntu\.com/ubuntu ]]; then
+            apt_mirror="http://ports.ubuntu.com/ubuntu-ports"
+            echo "DEBUG: Overriding apt_mirror to: $apt_mirror"
+        fi
     fi
 
     source /etc/lsb-release

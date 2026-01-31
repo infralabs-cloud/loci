@@ -9,4 +9,10 @@ ARG ALLOW_UNAUTHENTICATED=false
 ARG APT_MIRROR="https://archive.ubuntu.com/ubuntu/"
 
 COPY scripts/base.sh scripts/helpers.sh /
-RUN /base.sh && rm -f /base.sh /helpers.sh
+RUN ALLOW_UNAUTHENTICATED="${ALLOW_UNAUTHENTICATED}" \
+    APT_MIRROR="${APT_MIRROR}" \
+    OPENSTACK_RELEASE="${OPENSTACK_RELEASE}" \
+    CEPH_RELEASE="${CEPH_RELEASE}" \
+    CEPH_REPO="${CEPH_REPO}" \
+    CEPH_KEY="${CEPH_KEY}" \
+    /base.sh && rm -f /base.sh /helpers.sh
