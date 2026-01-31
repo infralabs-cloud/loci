@@ -68,6 +68,12 @@ configure_apt_sources() {
     #   $1: apt mirror URL (defaults to APT_MIRROR env or Ubuntu archive)
     local apt_mirror="${1}"
 
+    # Handle architecture-specific mirrors
+    local arch=$(uname -m)
+    if [[ ( "$arch" == "aarch64" || "$arch" == "arm64" ) && ( "$apt_mirror" == "https://archive.ubuntu.com/ubuntu/" || "$apt_mirror" == "http://archive.ubuntu.com/ubuntu/" ) ]]; then
+        apt_mirror="http://ports.ubuntu.com/ubuntu-ports"
+    fi
+
     source /etc/lsb-release
 
     if [[ ${DISTRIB_RELEASE%%.*} -ge 24 ]]; then  # Ubuntu 24.04 and newer
