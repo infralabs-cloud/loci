@@ -169,10 +169,17 @@ configure_packages() {
 }
 
 git_retry() {
-    local max_attempts=5
-    local timeout=1
+    local max_attempts=10
+    local timeout=2
     local attempt=1
     local exitCode=0
+
+    # Configure git for better reliability with large repositories
+    git config --global http.postBuffer 524288000
+    git config --global http.lowSpeedLimit 1000
+    git config --global http.lowSpeedTime 600
+    git config --global core.compression 0
+    git config --global http.version HTTP/1.1
 
     while (( attempt <= max_attempts ))
     do
@@ -184,15 +191,22 @@ git_retry() {
             break
         fi
 
-        echo "Command failed (attempt $attempt/$max_attempts): $@"
-        sleep $timeout
+        echo "[RETRY] Command failed (attempt $attempt/$max_attempts): $@"
+        echo "[RETRY] Exit code: $exitCode"
+        
+        # Add jitter to prevent thundering herd
+        local jitter=$((RANDOM % 5))
+        local sleep_time=$((timeout + jitter))
+        echo "[RETRY] Waiting ${sleep_time}s before retry..."
+        sleep $sleep_time
+        
         attempt=$(( attempt + 1 ))
         timeout=$(( timeout * 2 ))
     done
 
     if [[ $exitCode != 0 ]]
     then
-        echo "Command failed after $max_attempts attempts: $@"
+        echo "[ERROR] Command failed after $max_attempts attempts: $@"
     fi
 
     return $exitCode
@@ -209,11 +223,60 @@ clone_project() {
     local project_ref="$3"
 
     if [[ ! -d "${SOURCES_DIR}/${project_name}" ]]; then
-        git_retry git clone "${project_repo}" "${SOURCES_DIR}/${project_name}"
-        pushd "${SOURCES_DIR}/${project_name}"
-        git_retry git fetch "${project_repo}" "${project_ref}"
-        git checkout FETCH_HEAD
-        popd
+        echo "[INFO] Cloning ${project_name} from ${project_repo} (ref: ${project_ref})"
+        
+        # Use a wrapper to cleanup on failure and retry fresh
+        local clone_success=false
+        local max_clone_attempts=3
+        local clone_attempt=1
+        
+        while [[ $clone_success == false ]] && (( clone_attempt <= max_clone_attempts )); do
+            echo "[INFO] Clone attempt $clone_attempt/$max_clone_attempts for ${project_name}"
+            
+            # Clean up any partial clone from previous failed attempt
+            if [[ -d "${SOURCES_DIR}/${project_name}" ]]; then
+                echo "[INFO] Removing partial clone from previous attempt"
+                rm -rf "${SOURCES_DIR}/${project_name}"
+            fi
+            
+            # Try shallow clone first for speed, with verbose output
+            if git_retry git clone --depth=1 --branch="${project_ref}" --single-branch \
+                --verbose "${project_repo}" "${SOURCES_DIR}/${project_name}" 2>&1; then
+                clone_success=true
+                echo "[SUCCESS] Shallow clone of ${project_name} successful"
+            else
+                echo "[WARN] Shallow clone failed, trying full clone..."
+                # Fall back to full clone if shallow fails
+                if git_retry git clone --verbose "${project_repo}" "${SOURCES_DIR}/${project_name}" 2>&1; then
+                    pushd "${SOURCES_DIR}/${project_name}"
+                    if git_retry git fetch "${project_repo}" "${project_ref}" 2>&1; then
+                        git checkout FETCH_HEAD
+                        clone_success=true
+                        echo "[SUCCESS] Full clone of ${project_name} successful"
+                    else
+                        echo "[ERROR] Failed to fetch ref ${project_ref}"
+                    fi
+                    popd
+                else
+                    echo "[ERROR] Full clone also failed for ${project_name}"
+                fi
+            fi
+            
+            if [[ $clone_success == false ]]; then
+                clone_attempt=$((clone_attempt + 1))
+                if (( clone_attempt <= max_clone_attempts )); then
+                    echo "[RETRY] Will retry clone in 10 seconds..."
+                    sleep 10
+                fi
+            fi
+        done
+        
+        if [[ $clone_success == false ]]; then
+            echo "[FATAL] Failed to clone ${project_name} after $max_clone_attempts attempts"
+            return 1
+        fi
+    else
+        echo "[INFO] Project ${project_name} already exists at ${SOURCES_DIR}/${project_name}"
     fi
 }
 
