@@ -168,6 +168,36 @@ configure_packages() {
     fi
 }
 
+git_retry() {
+    local max_attempts=5
+    local timeout=1
+    local attempt=1
+    local exitCode=0
+
+    while (( attempt <= max_attempts ))
+    do
+        "$@"
+        exitCode=$?
+
+        if [[ $exitCode == 0 ]]
+        then
+            break
+        fi
+
+        echo "Command failed (attempt $attempt/$max_attempts): $@"
+        sleep $timeout
+        attempt=$(( attempt + 1 ))
+        timeout=$(( timeout * 2 ))
+    done
+
+    if [[ $exitCode != 0 ]]
+    then
+        echo "Command failed after $max_attempts attempts: $@"
+    fi
+
+    return $exitCode
+}
+
 clone_project() {
     # Clone the project defined by provided parameters into /tmp and checkout the ref.
     # Args:
@@ -179,9 +209,9 @@ clone_project() {
     local project_ref="$3"
 
     if [[ ! -d "${SOURCES_DIR}/${project_name}" ]]; then
-        git clone "${project_repo}" "${SOURCES_DIR}/${project_name}"
+        git_retry git clone "${project_repo}" "${SOURCES_DIR}/${project_name}"
         pushd "${SOURCES_DIR}/${project_name}"
-        git fetch "${project_repo}" "${project_ref}"
+        git_retry git fetch "${project_repo}" "${project_ref}"
         git checkout FETCH_HEAD
         popd
     fi
