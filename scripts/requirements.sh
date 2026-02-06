@@ -85,14 +85,14 @@ cat ${UPPER_CONSTRAINTS}
 # constrained on the version and we are building with --no-deps
 echo uwsgi enum-compat ${PIP_PACKAGES} | xargs -n1 | split -l1 -a3
 if [[ "$KEEP_ALL_WHEELS" == "False" ]]; then
-  ls -1 | xargs -n1 -P20 -t bash -c 'set -x; pip wheel ${PIP_WHEEL_ARGS} --find-links /source-wheels --find-links / --no-deps --wheel-dir / -c /global-requirements.txt -c ${UPPER_CONSTRAINTS_BUILD} -r $1 || cat $1 >> /failure' _ | tee /tmp/wheels.txt
+  ls -1 | xargs -n1 -P8 -t bash -c 'set -x; pip wheel ${PIP_WHEEL_ARGS} --find-links /source-wheels --find-links / --no-deps --wheel-dir / -c /global-requirements.txt -c ${UPPER_CONSTRAINTS_BUILD} -r $1 || cat $1 >> /failure' _ | tee /tmp/wheels.txt
   # Remove native-binary wheels, we only want to keep wheels that we
   # compiled ourselves.
   awk -F'[ ,]+' '/^Skipping/ {gsub("-","_");print $2}' /tmp/wheels.txt | xargs -r -n1 bash -c 'ls /$1-*' _ | sort -u | xargs -t -r rm
   # Wheels built from unnamed constraints were removed with previous command. Move them back after deletion.
   [ ! -z "$(ls -A /source-wheels)" ] && mv /source-wheels/*.whl /
 else
-  ls -1 | xargs -n1 -P20 -t bash -c 'set -x; mkdir $1-wheels; pip wheel ${PIP_WHEEL_ARGS} --find-links /source-wheels --find-links / --wheel-dir /$(pwd)/$1-wheels -c /global-requirements.txt -c ${UPPER_CONSTRAINTS_BUILD}  -r $1 || cat $1 >> /failure' _
+  ls -1 | xargs -n1 -P8 -t bash -c 'set -x; mkdir $1-wheels; pip wheel ${PIP_WHEEL_ARGS} --find-links /source-wheels --find-links / --wheel-dir /$(pwd)/$1-wheels -c /global-requirements.txt -c ${UPPER_CONSTRAINTS_BUILD}  -r $1 || cat $1 >> /failure' _
   for dir in *-wheels/; do [ ! -z "$(ls -A ${dir})" ] && mv ${dir}*.whl /; done
 fi
 
