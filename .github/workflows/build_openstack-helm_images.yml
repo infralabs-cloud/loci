@@ -1,5 +1,9 @@
 name: Build Openstack Helm Images
 
+permissions:
+  contents: read
+  packages: write
+
 on:
   push:
     branches:
@@ -31,7 +35,7 @@ jobs:
     steps:
       - id: set-matrix
         run: |
-          INPUT="${{ github.event.inputs.architectures }}"
+          INPUT="${{ github.event.inputs.architectures || 'linux/amd64,linux/arm64' }}"
           JSON_ARRAY=$(echo "[\"$(echo $INPUT | sed 's/,/","/g')\"]")
           echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
 
@@ -66,17 +70,17 @@ jobs:
         uses: docker/login-action@v3
         with:
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
           registry: ghcr.io
 
       - name: Normalize base image tag
         id: normalize
         run: |
-          BASE_ID="${{ github.event.inputs.base }}"
+          BASE_ID="${{ github.event.inputs.base || 'ubuntu:noble' }}"
           BASE_ID="${BASE_ID//:/_}"
           echo "BASE_ID=$BASE_ID" >> $GITHUB_ENV
 
-          VERSION="${{ github.event.inputs.version }}"
+          VERSION="${{ github.event.inputs.version || '2025.2' }}"
           case "$VERSION" in
             "2024.1") RELEASE="caracal"; CEPH="reef" ;;
             "2024.2") RELEASE="dalmatian"; CEPH="reef" ;;
@@ -94,17 +98,17 @@ jobs:
           context: loci
           file: loci/Dockerfile.base
           build-args: |
-            FROM=${{ github.event.inputs.base }}
+            FROM=${{ github.event.inputs.base || 'ubuntu:noble' }}
             OPENSTACK_RELEASE=${{ env.OPENSTACK_RELEASE }}
             CEPH_RELEASE=${{ env.CEPH_RELEASE }}
-          platforms: ${{ github.event.inputs.architectures }}
+          platforms: ${{ github.event.inputs.architectures || 'linux/amd64,linux/arm64' }}
           push: true
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/loci-base:cache
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/loci-base:cache,mode=max
           tags: |
-            ghcr.io/${{ github.repository_owner }}/loci-base:${{ github.event.inputs.version }}-${{ env.BASE_ID }}
+            ghcr.io/${{ github.repository_owner }}/loci-base:${{ github.event.inputs.version || '2025.2' }}-${{ env.BASE_ID }}
       - name: Set GHCR Token
-        run: echo "GHCR_TOKEN=${{ secrets.GHCR_TOKEN }}" >> $GITHUB_ENV
+        run: echo "GHCR_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
 
   build-service:
     needs: [build-base, prepare]
@@ -140,7 +144,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
           registry: ghcr.io
 
       - name: Install yq (Go-based)
@@ -160,17 +164,17 @@ jobs:
 
       - name: Set Env Vars (Services + GHCR Token)
         run: |
-          echo "services_list=${{ github.event.inputs.services }}" >> $GITHUB_ENV
-          echo "GHCR_TOKEN=${{ secrets.GHCR_TOKEN }}" >> $GITHUB_ENV
+          echo "services_list=${{ github.event.inputs.services || 'requirements,keystone,glance,nova,neutron,horizon,cinder,octavia,placement,openvswitch,ovn,mariadb,libvirt,skyline,kubernetes-entrypoint,ceph-config-helper,openstack-tools,openstack_client,amphora' }}" >> $GITHUB_ENV
+          echo "GHCR_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
 
       - name: Normalize base image tag
         id: normalize
         run: |
-          BASE_ID="${{ github.event.inputs.base }}"
+          BASE_ID="${{ github.event.inputs.base || 'ubuntu:noble' }}"
           BASE_ID="${BASE_ID//:/_}"
           echo "BASE_ID=$BASE_ID" >> $GITHUB_ENV
 
-          VERSION="${{ github.event.inputs.version }}"
+          VERSION="${{ github.event.inputs.version || '2025.2' }}"
           case "$VERSION" in
             "2024.1") RELEASE="caracal"; CEPH="reef" ;;
             "2024.2") RELEASE="dalmatian"; CEPH="reef" ;;
@@ -184,15 +188,15 @@ jobs:
   
       - name: Build and Push Images for Each Service
         env:
-          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
-          BRANCH: "stable/${{ github.event.inputs.version }}"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: "stable/${{ github.event.inputs.version || '2025.2' }}"
           ARCH: ${{ matrix.arch }}
         run: |
-          IFS=',' read -ra SERVICES <<<"${{ github.event.inputs.services }}"
+          IFS=',' read -ra SERVICES <<<"${{ github.event.inputs.services || 'requirements,keystone,glance,nova,neutron,horizon,cinder,octavia,placement,openvswitch,ovn,mariadb,libvirt,skyline,kubernetes-entrypoint,ceph-config-helper,openstack-tools,openstack_client,amphora' }}"
           ARCH_SHORT="${ARCH##*/}"
           
           # Normalize BASE_ID
-          BASE_ID="${{ github.event.inputs.base }}"
+          BASE_ID="${{ github.event.inputs.base || 'ubuntu:noble' }}"
           BASE_ID="${BASE_ID//:/_}"
 
           for SERVICE in "${SERVICES[@]}"; do
@@ -209,13 +213,13 @@ jobs:
                   --target requirements \
                   --build-arg PROJECT=requirements \
                   --build-arg PROJECT_REF=$BRANCH \
-                  --build-arg FROM=ghcr.io/${{ github.repository_owner }}/loci-base:${{ github.event.inputs.version }}-${BASE_ID} \
+                  --build-arg FROM=ghcr.io/${{ github.repository_owner }}/loci-base:${{ github.event.inputs.version || '2025.2' }}-${BASE_ID} \
                   --build-arg KEEP_ALL_WHEELS=yes \
                   --platform $ARCH \
                   --push \
                   --cache-from=type=registry,ref=ghcr.io/${{ github.repository_owner }}/requirements:cache-${ARCH_SHORT} \
                   --cache-to=type=registry,ref=ghcr.io/${{ github.repository_owner }}/requirements:cache-${ARCH_SHORT},mode=max \
-                  --tag ghcr.io/${{ github.repository_owner }}/requirements:${{ github.event.inputs.version }}-${BASE_ID}-${ARCH_SHORT} \
+                  --tag ghcr.io/${{ github.repository_owner }}/requirements:${{ github.event.inputs.version || '2025.2' }}-${BASE_ID}-${ARCH_SHORT} \
                   loci; then
                   SUCCESS=true
                   echo -e "\033[1;32m✅ Successfully built requirements for $ARCH\033[0m"
@@ -236,7 +240,7 @@ jobs:
               dedicated_file="openstack-helm-images/${SERVICE}/Dockerfile.ubuntu"
               if [ -f "$dedicated_file" ]; then
                 echo -e "\033[1;34m🚀 Building dedicated image for $SERVICE on $ARCH 🚀\033[0m"
-                DEDICATED_ARGS=(--build-arg "FROM=ghcr.io/${{ github.repository_owner }}/loci-base:${{ github.event.inputs.version }}-${BASE_ID}")
+                DEDICATED_ARGS=(--build-arg "FROM=ghcr.io/${{ github.repository_owner }}/loci-base:${{ github.event.inputs.version || '2025.2' }}-${BASE_ID}")
                 
                 RETRY_COUNT=0
                 MAX_RETRIES=3
@@ -249,7 +253,7 @@ jobs:
                     --push \
                     --cache-from=type=registry,ref=ghcr.io/${{ github.repository_owner }}/${SERVICE}:cache-${ARCH_SHORT} \
                     --cache-to=type=registry,ref=ghcr.io/${{ github.repository_owner }}/${SERVICE}:cache-${ARCH_SHORT},mode=max \
-                    --tag ghcr.io/${{ github.repository_owner }}/${SERVICE}:${{ github.event.inputs.version }}-${BASE_ID}-${ARCH_SHORT} \
+                    --tag ghcr.io/${{ github.repository_owner }}/${SERVICE}:${{ github.event.inputs.version || '2025.2' }}-${BASE_ID}-${ARCH_SHORT} \
                     openstack-helm-images/${SERVICE}; then
                     SUCCESS=true
                     echo -e "\033[1;32m✅ Successfully built $SERVICE for $ARCH\033[0m"
@@ -263,11 +267,11 @@ jobs:
                 PROFILES=$(yq e ".${SERVICE}_image.build_args[] | select(test(\"^PROFILES=\"))" loci/playbooks/vars.yaml | sed "s/^PROFILES=//" | sed "s|{{ openstack_release }}|$BRANCH|g"| tr -d "'")
                 PIP_PACKAGES=$(yq e ".${SERVICE}_image.build_args[] | select(test(\"^PIP_PACKAGES=\"))" loci/playbooks/vars.yaml | sed "s/^PIP_PACKAGES=//"| tr -d "'")
                 BUILD_ARGS=(--build-arg "PROJECT_REF=$BRANCH")
-                BUILD_ARGS+=(--build-arg "WHEELS=ghcr.io/${{ github.repository_owner }}/requirements:${{ github.event.inputs.version }}-${BASE_ID}")
+                BUILD_ARGS+=(--build-arg "WHEELS=ghcr.io/${{ github.repository_owner }}/requirements:${{ github.event.inputs.version || '2025.2' }}-${BASE_ID}")
                 [[ -n "$DIST_PACKAGES" ]] && BUILD_ARGS+=(--build-arg "DIST_PACKAGES=$DIST_PACKAGES")
                 [[ -n "$PROFILES" ]] && BUILD_ARGS+=(--build-arg "PROFILES=$PROFILES")
                 [[ -n "$PIP_PACKAGES" ]] && BUILD_ARGS+=(--build-arg "PIP_PACKAGES=$PIP_PACKAGES")
-                BUILD_ARGS+=(--build-arg "FROM=ghcr.io/${{ github.repository_owner }}/loci-base:${{ github.event.inputs.version }}-${BASE_ID}")
+                BUILD_ARGS+=(--build-arg "FROM=ghcr.io/${{ github.repository_owner }}/loci-base:${{ github.event.inputs.version || '2025.2' }}-${BASE_ID}")
 
                 echo -e "\033[1;34m🚀 Building loci image for $SERVICE on $ARCH 🚀\033[0m"
                 RETRY_COUNT=0
@@ -283,7 +287,7 @@ jobs:
                     --push \
                     --cache-from=type=registry,ref=ghcr.io/${{ github.repository_owner }}/${SERVICE}:cache-${ARCH_SHORT} \
                     --cache-to=type=registry,ref=ghcr.io/${{ github.repository_owner }}/${SERVICE}:cache-${ARCH_SHORT},mode=max \
-                    --tag ghcr.io/${{ github.repository_owner }}/${SERVICE}:${{ github.event.inputs.version }}-${BASE_ID}-${ARCH_SHORT} \
+                    --tag ghcr.io/${{ github.repository_owner }}/${SERVICE}:${{ github.event.inputs.version || '2025.2' }}-${BASE_ID}-${ARCH_SHORT} \
                     loci; then
                     SUCCESS=true
                     echo -e "\033[1;32m✅ Successfully built $SERVICE for $ARCH\033[0m"
@@ -304,15 +308,15 @@ jobs:
         uses: docker/login-action@v3
         with:
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
           registry: ghcr.io
 
       - name: Create Multi-Arch Manifests and Summary
         env:
-          SERVICES_STRING: ${{ github.event.inputs.services }}
-          ARCHS_STRING: ${{ github.event.inputs.architectures }}
-          VERSION: ${{ github.event.inputs.version }}
-          BASE: ${{ github.event.inputs.base }}
+          SERVICES_STRING: ${{ github.event.inputs.services || 'requirements,keystone,glance,nova,neutron,horizon,cinder,octavia,placement,openvswitch,ovn,mariadb,libvirt,skyline,kubernetes-entrypoint,ceph-config-helper,openstack-tools,openstack_client,amphora' }}
+          ARCHS_STRING: ${{ github.event.inputs.architectures || 'linux/amd64,linux/arm64' }}
+          VERSION: ${{ github.event.inputs.version || '2025.2' }}
+          BASE: ${{ github.event.inputs.base || 'ubuntu:noble' }}
         run: |
           IFS=',' read -ra SERVICES <<<"$SERVICES_STRING"
           IFS=',' read -ra ARCHS <<<"$ARCHS_STRING"
