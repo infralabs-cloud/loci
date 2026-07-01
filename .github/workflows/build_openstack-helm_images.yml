@@ -1,0 +1,352 @@
+name: Build Openstack Helm Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Select image version (e.g. master, 2024.2, or 2025.1)'
+        required: true
+        default: '2025.2'
+      base:
+        description: 'Select base image (e.g. ubuntu:noble,ubuntu:jammy)'
+        required: true
+        default: 'ubuntu:noble'
+      services:
+        description: 'Enter the service names (comma-separated, e.g. requirements,keystone,nova,neutron,amphora)'
+        required: true
+        default: 'requirements,keystone,glance,nova,neutron,horizon,cinder,octavia,placement,openvswitch,ovn,mariadb,libvirt,skyline,kubernetes-entrypoint,ceph-config-helper,openstack-tools,openstack_client,amphora'
+      architectures:
+        description: 'Target architectures (comma-separated, e.g. linux/amd64,linux/arm64)'
+        required: true
+        default: 'linux/amd64,linux/arm64'
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          INPUT="${{ github.event.inputs.architectures }}"
+          JSON_ARRAY=$(echo "[\"$(echo $INPUT | sed 's/,/","/g')\"]")
+          echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
+
+  build-base:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          path: loci
+
+      - name: Install Docker
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates curl gh jq
+          sudo install -m 0755 -d /etc/apt/keyrings
+          sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+          sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+          # Add the repository to Apt sources:
+          echo \
+            "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+            $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
+            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+          registry: ghcr.io
+
+      - name: Normalize base image tag
+        id: normalize
+        run: |
+          BASE_ID="${{ github.event.inputs.base }}"
+          BASE_ID="${BASE_ID//:/_}"
+          echo "BASE_ID=$BASE_ID" >> $GITHUB_ENV
+
+          VERSION="${{ github.event.inputs.version }}"
+          case "$VERSION" in
+            "2024.1") RELEASE="caracal"; CEPH="reef" ;;
+            "2024.2") RELEASE="dalmatian"; CEPH="reef" ;;
+            "2025.1") RELEASE="epoxy"; CEPH="squid" ;;
+            "2025.2") RELEASE="flamingo"; CEPH="squid" ;;
+            "master") RELEASE="master"; CEPH="squid" ;;
+            *) RELEASE=""; CEPH="reef" ;;
+          esac
+          echo "OPENSTACK_RELEASE=$RELEASE" >> $GITHUB_ENV
+          echo "CEPH_RELEASE=$CEPH" >> $GITHUB_ENV
+
+      - name: Build and Push Base Image
+        uses: docker/build-push-action@v3
+        with:
+          context: loci
+          file: loci/Dockerfile.base
+          build-args: |
+            FROM=${{ github.event.inputs.base }}
+            OPENSTACK_RELEASE=${{ env.OPENSTACK_RELEASE }}
+            CEPH_RELEASE=${{ env.CEPH_RELEASE }}
+          platforms: ${{ github.event.inputs.architectures }}
+          push: true
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/loci-base:cache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/loci-base:cache,mode=max
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/loci-base:${{ github.event.inputs.version }}-${{ env.BASE_ID }}
+      - name: Set GHCR Token
+        run: echo "GHCR_TOKEN=${{ secrets.GHCR_TOKEN }}" >> $GITHUB_ENV
+
+  build-service:
+    needs: [build-base, prepare]
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          path: loci
+
+      - name: Remove and Clone openstack-helm-images Repository
+        run: |
+            rm -rf openstack-helm-images
+            git clone https://github.com/infralabs-cloud/openstack-helm-images.git
+
+      - name: Debug - Inspect Cloned Repositories
+        run: |
+            echo "--- MariaDB Dockerfile ---"
+            cat openstack-helm-images/mariadb/Dockerfile.ubuntu || echo "Missing"
+            echo "--- Kubernetes Entrypoint Dockerfile ---"
+            cat openstack-helm-images/kubernetes-entrypoint/Dockerfile.ubuntu || echo "Missing"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=moby/buildkit:latest
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+          registry: ghcr.io
+
+      - name: Install yq (Go-based)
+        run: |
+            ARCH=$(uname -m)
+            if [[ "$ARCH" == "x86_64" ]]; then
+              YQ_URL="https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64"
+            elif [[ "$ARCH" == "aarch64" ]]; then
+              YQ_URL="https://github.com/mikefarah/yq/releases/latest/download/yq_linux_arm64"
+            else
+              echo "Unsupported architecture: $ARCH"
+              exit 1
+            fi
+            sudo wget $YQ_URL -O /usr/local/bin/yq
+            sudo chmod +x /usr/local/bin/yq
+            yq --version
+
+      - name: Set Env Vars (Services + GHCR Token)
+        run: |
+          echo "services_list=${{ github.event.inputs.services }}" >> $GITHUB_ENV
+          echo "GHCR_TOKEN=${{ secrets.GHCR_TOKEN }}" >> $GITHUB_ENV
+
+      - name: Normalize base image tag
+        id: normalize
+        run: |
+          BASE_ID="${{ github.event.inputs.base }}"
+          BASE_ID="${BASE_ID//:/_}"
+          echo "BASE_ID=$BASE_ID" >> $GITHUB_ENV
+
+          VERSION="${{ github.event.inputs.version }}"
+          case "$VERSION" in
+            "2024.1") RELEASE="caracal"; CEPH="reef" ;;
+            "2024.2") RELEASE="dalmatian"; CEPH="reef" ;;
+            "2025.1") RELEASE="epoxy"; CEPH="squid" ;;
+            "2025.2") RELEASE="flamingo"; CEPH="squid" ;;
+            "master") RELEASE="master"; CEPH="squid" ;;
+            *) RELEASE=""; CEPH="reef" ;;
+          esac
+          echo "OPENSTACK_RELEASE=$RELEASE" >> $GITHUB_ENV
+          echo "CEPH_RELEASE=$CEPH" >> $GITHUB_ENV
+  
+      - name: Build and Push Images for Each Service
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          BRANCH: "stable/${{ github.event.inputs.version }}"
+          ARCH: ${{ matrix.arch }}
+        run: |
+          IFS=',' read -ra SERVICES <<<"${{ github.event.inputs.services }}"
+          ARCH_SHORT="${ARCH##*/}"
+          
+          # Normalize BASE_ID
+          BASE_ID="${{ github.event.inputs.base }}"
+          BASE_ID="${BASE_ID//:/_}"
+
+          for SERVICE in "${SERVICES[@]}"; do
+            if [ "$SERVICE" = "requirements" ]; then
+              echo -e "\033[1;34m🚀 Building requirements image natively for $ARCH 🚀\033[0m"
+              
+              RETRY_COUNT=0
+              MAX_RETRIES=3
+              SUCCESS=false
+              
+              while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = "false" ]; do
+                if docker buildx build \
+                  --file loci/Dockerfile \
+                  --target requirements \
+                  --build-arg PROJECT=requirements \
+                  --build-arg PROJECT_REF=$BRANCH \
+                  --build-arg FROM=ghcr.io/${{ github.repository_owner }}/loci-base:${{ github.event.inputs.version }}-${BASE_ID} \
+                  --build-arg KEEP_ALL_WHEELS=yes \
+                  --platform $ARCH \
+                  --push \
+                  --cache-from=type=registry,ref=ghcr.io/${{ github.repository_owner }}/requirements:cache-${ARCH_SHORT} \
+                  --cache-to=type=registry,ref=ghcr.io/${{ github.repository_owner }}/requirements:cache-${ARCH_SHORT},mode=max \
+                  --tag ghcr.io/${{ github.repository_owner }}/requirements:${{ github.event.inputs.version }}-${BASE_ID}-${ARCH_SHORT} \
+                  loci; then
+                  SUCCESS=true
+                  echo -e "\033[1;32m✅ Successfully built requirements for $ARCH\033[0m"
+                else
+                  RETRY_COUNT=$((RETRY_COUNT + 1))
+                  if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                    echo -e "\033[1;33m⚠️  Build failed for $ARCH, retry $RETRY_COUNT/$MAX_RETRIES\033[0m"
+                    sleep 30
+                  else
+                    echo -e "\033[1;31m❌ Build failed for $ARCH after $MAX_RETRIES attempts\033[0m"
+                    exit 1
+                  fi
+                fi
+              done
+            elif [ "$SERVICE" = "amphora" ]; then
+              echo "Skipping amphora for native matrix build (requires complex diskimage-create logic)"
+            else
+              dedicated_file="openstack-helm-images/${SERVICE}/Dockerfile.ubuntu"
+              if [ -f "$dedicated_file" ]; then
+                echo -e "\033[1;34m🚀 Building dedicated image for $SERVICE on $ARCH 🚀\033[0m"
+                DEDICATED_ARGS=(--build-arg "FROM=ghcr.io/${{ github.repository_owner }}/loci-base:${{ github.event.inputs.version }}-${BASE_ID}")
+                
+                RETRY_COUNT=0
+                MAX_RETRIES=3
+                SUCCESS=false
+                while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = "false" ]; do
+                  if docker buildx build \
+                    "${DEDICATED_ARGS[@]}" \
+                    --file $dedicated_file \
+                    --platform $ARCH \
+                    --push \
+                    --cache-from=type=registry,ref=ghcr.io/${{ github.repository_owner }}/${SERVICE}:cache-${ARCH_SHORT} \
+                    --cache-to=type=registry,ref=ghcr.io/${{ github.repository_owner }}/${SERVICE}:cache-${ARCH_SHORT},mode=max \
+                    --tag ghcr.io/${{ github.repository_owner }}/${SERVICE}:${{ github.event.inputs.version }}-${BASE_ID}-${ARCH_SHORT} \
+                    openstack-helm-images/${SERVICE}; then
+                    SUCCESS=true
+                    echo -e "\033[1;32m✅ Successfully built $SERVICE for $ARCH\033[0m"
+                  else
+                    RETRY_COUNT=$((RETRY_COUNT + 1))
+                    [ $RETRY_COUNT -lt $MAX_RETRIES ] && sleep 30 || exit 1
+                  fi
+                done
+              else
+                DIST_PACKAGES=$(yq e ".${SERVICE}_image.build_args[] | select(test(\"^DIST_PACKAGES=\"))" loci/playbooks/vars.yaml | sed "s/^DIST_PACKAGES=//"| tr -d "'")
+                PROFILES=$(yq e ".${SERVICE}_image.build_args[] | select(test(\"^PROFILES=\"))" loci/playbooks/vars.yaml | sed "s/^PROFILES=//" | sed "s|{{ openstack_release }}|$BRANCH|g"| tr -d "'")
+                PIP_PACKAGES=$(yq e ".${SERVICE}_image.build_args[] | select(test(\"^PIP_PACKAGES=\"))" loci/playbooks/vars.yaml | sed "s/^PIP_PACKAGES=//"| tr -d "'")
+                BUILD_ARGS=(--build-arg "PROJECT_REF=$BRANCH")
+                BUILD_ARGS+=(--build-arg "WHEELS=ghcr.io/${{ github.repository_owner }}/requirements:${{ github.event.inputs.version }}-${BASE_ID}")
+                [[ -n "$DIST_PACKAGES" ]] && BUILD_ARGS+=(--build-arg "DIST_PACKAGES=$DIST_PACKAGES")
+                [[ -n "$PROFILES" ]] && BUILD_ARGS+=(--build-arg "PROFILES=$PROFILES")
+                [[ -n "$PIP_PACKAGES" ]] && BUILD_ARGS+=(--build-arg "PIP_PACKAGES=$PIP_PACKAGES")
+                BUILD_ARGS+=(--build-arg "FROM=ghcr.io/${{ github.repository_owner }}/loci-base:${{ github.event.inputs.version }}-${BASE_ID}")
+
+                echo -e "\033[1;34m🚀 Building loci image for $SERVICE on $ARCH 🚀\033[0m"
+                RETRY_COUNT=0
+                MAX_RETRIES=3
+                SUCCESS=false
+                while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = "false" ]; do
+                  if docker buildx build \
+                    "${BUILD_ARGS[@]}" \
+                    --file loci/Dockerfile \
+                    --target project \
+                    --build-arg PROJECT=$SERVICE \
+                    --platform $ARCH \
+                    --push \
+                    --cache-from=type=registry,ref=ghcr.io/${{ github.repository_owner }}/${SERVICE}:cache-${ARCH_SHORT} \
+                    --cache-to=type=registry,ref=ghcr.io/${{ github.repository_owner }}/${SERVICE}:cache-${ARCH_SHORT},mode=max \
+                    --tag ghcr.io/${{ github.repository_owner }}/${SERVICE}:${{ github.event.inputs.version }}-${BASE_ID}-${ARCH_SHORT} \
+                    loci; then
+                    SUCCESS=true
+                    echo -e "\033[1;32m✅ Successfully built $SERVICE for $ARCH\033[0m"
+                  else
+                    RETRY_COUNT=$((RETRY_COUNT + 1))
+                    [ $RETRY_COUNT -lt $MAX_RETRIES ] && sleep 30 || exit 1
+                  fi
+                done
+              fi
+            fi
+          done
+
+  finalize-images:
+    needs: [build-service, prepare]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+          registry: ghcr.io
+
+      - name: Create Multi-Arch Manifests and Summary
+        env:
+          SERVICES_STRING: ${{ github.event.inputs.services }}
+          ARCHS_STRING: ${{ github.event.inputs.architectures }}
+          VERSION: ${{ github.event.inputs.version }}
+          BASE: ${{ github.event.inputs.base }}
+        run: |
+          IFS=',' read -ra SERVICES <<<"$SERVICES_STRING"
+          IFS=',' read -ra ARCHS <<<"$ARCHS_STRING"
+          
+          # Normalize BASE_ID
+          BASE_ID="${BASE//:/_}"
+          
+          echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+          echo -e "\033[1;35m        BUILD SUMMARY REPORT\033[0m"
+          echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+          
+          for SERVICE in "${SERVICES[@]}"; do
+            echo -e "\033[1;34m📦 Processing $SERVICE\033[0m"
+            MANIFEST_IMAGES=""
+            ALL_ARCH_SUCCESS=true
+            
+            for ARCH in "${ARCHS[@]}"; do
+              ARCH_SHORT="${ARCH##*/}"
+              IMAGE_TAG="ghcr.io/${{ github.repository_owner }}/${SERVICE}:${VERSION}-${BASE_ID}-${ARCH_SHORT}"
+              
+              if docker buildx imagetools inspect "$IMAGE_TAG" >/dev/null 2>&1; then
+                echo -e "   \033[1;32m✅ ${ARCH}\033[0m: $IMAGE_TAG"
+                MANIFEST_IMAGES="$MANIFEST_IMAGES $IMAGE_TAG"
+              else
+                echo -e "   \033[1;31m❌ ${ARCH}\033[0m: MISSING"
+                ALL_ARCH_SUCCESS=false
+              fi
+            done
+            
+            if [ "$ALL_ARCH_SUCCESS" = "true" ] && [ -n "$MANIFEST_IMAGES" ]; then
+              echo -e "   \033[1;35m🔗 Creating multi-arch manifest...\033[0m"
+              docker buildx imagetools create -t "ghcr.io/${{ github.repository_owner }}/${SERVICE}:${VERSION}-${BASE_ID}" $MANIFEST_IMAGES
+              echo -e "   \033[1;32m🏁 Multi-arch: ghcr.io/${{ github.repository_owner }}/${SERVICE}:${VERSION}-${BASE_ID}\033[0m"
+            else
+              echo -e "   \033[1;33m⚠️  Skipping multi-arch manifest due to missing architectures.\033[0m"
+            fi
+            echo ""
+          done
+          
+          echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
