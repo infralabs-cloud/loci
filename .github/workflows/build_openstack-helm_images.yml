@@ -1,6 +1,9 @@
 name: Build Openstack Helm Images
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       version:
