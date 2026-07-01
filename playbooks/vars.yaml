@@ -417,6 +417,7 @@ octavia_image:
     - "WHEELS='{{ image_registry.host }}/{{ image_registry.org }}/requirements:{{ image_tag }}'"
     - "KEEP_ALL_WHEELS=yes"
     - "APT_MIRROR='{{ apt_mirror }}'"
+    - "PIP_PACKAGES='ovn-octavia-provider' "
 
 openstack_client_pip_packages:
   - cmd2
