@@ -346,6 +346,7 @@ octavia_image:
     - "BASE_RUNTIME='{{ image_registry.host }}/{{ image_registry.org }}/base:{{ image_tag }}'"
     - "PROJECT='octavia'"
     - "PROJECT_REF={{ openstack_release }}"
+    - "PIP_PACKAGES='ovn-octavia-provider redis'"
     - "APT_MIRROR='{{ apt_mirror }}'"
 
 openstack_client_pip_packages:
