@@ -132,6 +132,10 @@ cleanup() {
 
     # Allow python to use system site packages when missing from the venv
     sed -i 's/\(include-system-site-packages\).*/\1 = true/g' /var/lib/openstack/pyvenv.cfg
+    
+    # Workaround for pip sys.path precedence issue with cffi during runtime updates
+    # By removing it from the venv, we force pip to respect the system site-packages precedence.
+    pip uninstall -y cffi || true
     rm -rf /tmp/* /root/.cache/pip /etc/machine-id
     find /usr/ /var/ \( -name "*.pyc" -o -name "__pycache__" \) -delete
     # Remove sources added to image
